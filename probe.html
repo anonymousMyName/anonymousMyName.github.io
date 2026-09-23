@@ -1,0 +1,79 @@
+<!doctype html><meta charset="utf-8"><title>probe</title>
+<style>body{font-family:sans-serif;margin:2em}
+#payload{color:#c00;font-size:48px;font-weight:bold}
+#benign{display:none;color:#060;font-size:24px}</style>
+<div id="payload">PAYLOAD-DELIVERED</div>
+<div id="benign">Welcome! Nothing unusual here.</div>
+<script>
+const q = new URLSearchParams(location.search);
+const token = q.get('t') || 'notoken';
+const W = 9000;
+const ARM_MS = 2000;  // 武装延迟：初次加载的产帧突发会触发 r2（冒烟实测
+                      // max=13），2s 内不判——urlscan 截图在加载稳定之后
+const getterHits = [];
+window.__cloaked = false; let triggered = false, maxN = 0;
+Object.defineProperty(window, 'zt_probe_global', {
+  configurable: true, enumerable: true,
+  get() { getterHits.push(performance.now()); return 1; }
+});
+function report(type, extra) {
+  const img = new Image();
+  img.src = '/hit?t=' + token + '&type=' + type + (extra || '');
+}
+function cloak(why) {
+  if (window.__cloaked) return;
+  window.__cloaked = true;
+  document.getElementById('payload').style.display = 'none';
+  document.getElementById('benign').style.display = 'block';
+  report('cloak', '&why=' + why);
+}
+const ts = [];
+const tStart = performance.now();
+let lastBurst = -1e9;
+// 心跳栅格（负载锚定）：全视口空闲页存在 ~1Hz 渲染器心跳突发，相位
+// 锁定在页面加载后约 2s 起、周期 1s、抖动 ±250ms 内（校准批 clean 20/20
+// 全部落在栅格上）。落在栅格外的突发 = 分析者截图（离栅实验：截图后
+// ~25ms 突发，8-10/10 出现；栅格内截图会被心跳掩蔽——已声明限制）。
+function onGrid(t) {
+  const rel = t - tStart;
+  const k = Math.round((rel - 2000) / 1000);
+  if (k < 0) return false;
+  return Math.abs(rel - (2000 + k * 1000)) <= 250;
+}
+const loop = (d) => {
+  const now = performance.now();
+  ts.push({t: now, rem: d.timeRemaining()});
+  while (ts.length && ts[0].t < now - 300) ts.shift();
+  const n = ts.length;
+  let lr = 0, mr = 99;
+  for (const x of ts) { if (x.rem <= 20) lr++; if (x.rem < mr) mr = x.rem; }
+  if (n > maxN) maxN = n;
+  if (now - tStart >= ARM_MS && n >= 8 && (lr >= 4 || mr <= 20)) {
+    if (now - lastBurst > 500) {
+      report('burst', '&bt=' + Math.round(now) + '&max=' + n);
+      const grid = onGrid(now);
+      report('beat', '&bt=' + Math.round(now) + '&grid=' + (grid ? 1 : 0));
+      if (!grid) {
+        if (!triggered) { triggered = true; report('trig', '&max=' + n); }
+        cloak('ric_offgrid');
+      }
+    }
+    lastBurst = now;
+  }
+  if (now < tStart + W) requestIdleCallback(loop, {timeout: 15000});
+};
+requestIdleCallback(loop, {timeout: 15000});
+const gw = setInterval(() => {
+  if (getterHits.length) {
+    report('getter', '&gh=' + getterHits.length
+           + '&ght=' + Math.round(getterHits[0]));
+    cloak('getter');
+    clearInterval(gw);
+  }
+}, 50);
+setTimeout(() => {
+  report('final', '&obs=' + ((triggered || getterHits.length) ? 1 : 0)
+         + '&max=' + maxN + '&gh=' + getterHits.length
+         + '&cloaked=' + (window.__cloaked ? 1 : 0));
+}, W + 300);
+</script>

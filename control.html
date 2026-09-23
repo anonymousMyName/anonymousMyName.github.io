@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><title>control</title>
+<style>body{font-family:sans-serif;margin:2em}
+#payload{color:#c00;font-size:48px;font-weight:bold}</style>
+<div id="payload">PAYLOAD-DELIVERED</div>
+<script>
+const q = new URLSearchParams(location.search);
+const token = q.get('t') || 'notoken';
+const img = new Image();
+img.src = '/hit?t=' + token + '&type=control_exfil';
+setTimeout(() => { const i2 = new Image();
+  i2.src = '/hit?t=' + token + '&type=control_final'; }, 9300);
+</script>
